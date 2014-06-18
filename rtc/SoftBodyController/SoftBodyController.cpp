@@ -382,8 +382,8 @@ bool SoftBodyController::calcCompensationTorque(hrp::dvector& compensationTau)
     }
     // calc compensation torque: A(q)*ddq + B(q, dq) + C(q) = tau
     for (int i = 0; i < m_robot->numJoints(); i++) {
-      compensationTau[i] = inertia_torque[i] + friction_torque[i] + gravity_compensation[i];
-      // compensationTau[i] = gravity_compensation[i];
+      // compensationTau[i] = inertia_torque[i] + friction_torque[i] + gravity_compensation[i];
+      compensationTau[i] = gravity_compensation[i];
     }
     if (isDebug()) {
       std::string prefix = "[SoftBodyController]";
