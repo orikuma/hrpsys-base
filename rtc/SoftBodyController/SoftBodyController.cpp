@@ -12,11 +12,6 @@
 #include <hrpModel/ModelLoaderUtil.h>
 #include <hrpUtil/MatrixSolvers.h>
 
-#define DEBUGP ((m_debugLevel==1 && loop%200==0) || m_debugLevel > 1 )
-
-#define DQ_MAX 0.1 // 5[deg]
-#define DDQ_MAX 0.1 // 5[deg/s]
-
 // Module specification
 // <rtc-template block="module_spec">
 static const char* softbodycontroller_spec[] =
@@ -169,7 +164,6 @@ RTC::ReturnCode_t SoftBodyController::onInitialize()
 }
 
 
-
 /*
   RTC::ReturnCode_t SoftBodyController::onFinalize()
   {
@@ -206,8 +200,7 @@ RTC::ReturnCode_t SoftBodyController::onDeactivated(RTC::UniqueId ec_id)
 RTC::ReturnCode_t SoftBodyController::onExecute(RTC::UniqueId ec_id)
 {
   // std::cout << m_profile.instance_name<< ": onExecute(" << ec_id << ")" << std::endl;
-  static int loop = 0;
-  loop ++;
+  m_loop++;
 
   const int send_dist_tau_cycle = 200;
   
@@ -226,87 +219,24 @@ RTC::ReturnCode_t SoftBodyController::onExecute(RTC::UniqueId ec_id)
     m_tauIn.read();
   }
   
-  if ( m_qCurrent.data.length() == m_robot->numJoints()
-       && m_qRef.data.length() == m_robot->numJoints()
-       && m_tau.data.length() == m_robot->numJoints()) {
+  if (m_qCurrent.data.length() == m_robot->numJoints()
+      && m_qRef.data.length() == m_robot->numJoints()) {
+    updateCalculatedJointAngle();
 
-    double new_dq, new_ddq;
-    for(int i = 0; i < m_robot->numJoints(); i++) {
-      new_dq = (m_qRef.data[i] - m_calculated_q[i]) / m_dt;
-      new_ddq = (new_dq - m_calculated_dq[i]) / m_dt;
-      m_calculated_q[i] = m_qRef.data[i];
-      m_calculated_dq[i] = m_filters[2 * i].executeFilter(new_dq);
-      m_calculated_ddq[i] = m_filters[2 * i + 1].executeFilter(new_ddq);
-    }
-    
-    // update reference robot model
+    // update robot model
     for(int i = 0; i < m_robot->numJoints(); i++){
       m_robot->joint(i)->q = m_qCurrent.data[i];
     }
     m_robot->calcForwardKinematics();
     m_robot->calcCM();
     m_robot->rootLink()->calcSubMassCM();
+  }
 
-    if ( DEBUGP ) {
-      std::string prefix = "[SoftBodyController]";
-      std::cerr << prefix << "qCurrent:";
-      for (int i = 0; i < m_robot->numJoints(); i++) {
-        std::cerr << " " << m_qCurrent.data[i];
-      }
-      std::cerr << std::endl;
-      std::cerr << prefix << "q:";
-      for (int i = 0; i < m_robot->numJoints(); i++) {
-        std::cerr << " " << m_qRef.data[i];
-      }
-      std::cerr << std::endl;
-      std::cerr << prefix << "dq:";
-      for (int i = 0; i < m_robot->numJoints(); i++) {
-        std::cerr << " " << m_calculated_dq[i];
-      }
-      std::cerr << std::endl;
-      std::cerr << prefix << "ddq:";
-      for (int i = 0; i < m_robot->numJoints(); i++) {
-        std::cerr << " " << m_calculated_ddq[i];
-      }
-      std::cerr << std::endl;
-    }
+  if (m_tau.data.length() == m_robot->numJoints()) {
 
-    // calc inertia
-    hrp::dvector inertia_torque(m_robot->numJoints());
-    for (int i = 0; i < m_robot->numJoints(); i++) {
-      // tau = J * ddq
-      // inertia = rotorInertia + InertiaAroundJointAxis
-      hrp::Vector3 cog_world = (m_robot->joint(i)->submwc / m_robot->joint(i)->subm) - m_robot->joint(i)->p;
-      double inertia = m_robot->joint(i)->Ir + (m_robot->joint(i)->subm * cog_world.squaredNorm());
-      inertia_torque[i] = inertia * m_calculated_ddq[i];
-    }
-
-    // calc friction
-    hrp::dvector friction_torque(m_robot->numJoints());
-    for (int i = 0; i < m_robot->numJoints(); i++) {
-      // B * dq
-      friction_torque[i] = m_frictionCoeffs[i] * m_calculated_dq[i];
-    }
-    
-    // calc gravity compensation of each joints
-    hrp::Vector3 g(0, 0, 9.8);
-    hrp::dvector gravity_compensation(m_robot->numJoints());
-    for (int i = 0; i < m_robot->numJoints(); i++) {
-      // (submwc/subm - p) x subm*g . R*a
-      // subm: mass, g: gravity, submwc/subm: cog in worldcoords, p: pos in worldcoords, R: posture, a: axis in worldcoords
-      // gravity_compensation[i] = (m_robot->joint(i)->submwc / m_robot->joint(i)->subm - m_robot->joint(i)->p).cross(m_robot->joint(i)->subm*g).dot(m_robot->joint(i)->R * m_robot->joint(i)->a);
-      hrp::Vector3 cog_world = (m_robot->joint(i)->submwc / m_robot->joint(i)->subm) - m_robot->joint(i)->p;
-      hrp::Vector3 mg = m_robot->joint(i)->subm*g;
-      hrp::Vector3 axis_world = m_robot->joint(i)->R * m_robot->joint(i)->a;
-      gravity_compensation[i] = (cog_world.cross(mg)).dot(axis_world);
-    }
-
-    // decide dist_tau
+    // target torque: compensation torque
     hrp::dvector dist_tau(m_robot->numJoints());
-    for (int i = 0; i < m_robot->numJoints(); i++) {
-      dist_tau[i] = inertia_torque[i] + friction_torque[i] + gravity_compensation[i];
-      // dist_tau[i] = gravity_compensation[i];
-    }
+    calcCompensationTorque(dist_tau); // gravity and dynamics compensation basend on robot model
 
     // consider torque margin
     hrp::dvector actual_dist_tau(m_robot->numJoints());
@@ -316,28 +246,13 @@ RTC::ReturnCode_t SoftBodyController::onExecute(RTC::UniqueId ec_id)
       } else {
         actual_dist_tau[i] = dist_tau[i];
       }
-      if (!(loop % send_dist_tau_cycle)) {
+      if (!(m_loop % send_dist_tau_cycle)) {
         m_TorqueControllerService0->setReferenceTorque(m_robot->joint(i)->name.c_str(), actual_dist_tau[i]);
       }
     }
-    
-    if ( DEBUGP ) {
+
+    if (isDebug()) {
       std::string prefix = "[SoftBodyController]";
-      std::cerr << prefix << "inertia:";
-      for (int i = 0; i < m_robot->numJoints(); i++) {
-        std::cerr << " " << inertia_torque[i];
-      }
-      std::cerr << std::endl;
-      std::cerr << prefix << "friction:";
-      for (int i = 0; i < m_robot->numJoints(); i++) {
-        std::cerr << " " << friction_torque[i];
-      }
-      std::cerr << std::endl;
-      std::cerr << prefix << "gravity:";
-      for (int i = 0; i < m_robot->numJoints(); i++) {
-        std::cerr << " " << gravity_compensation[i];
-      }
-      std::cerr << std::endl;
       std::cerr << prefix << "dist_tau:";
       for (int i = 0; i < m_robot->numJoints(); i++) {
         std::cerr << " " << dist_tau[i];
@@ -348,7 +263,7 @@ RTC::ReturnCode_t SoftBodyController::onExecute(RTC::UniqueId ec_id)
         std::cerr << " " << actual_dist_tau[i];
       }
       std::cerr << std::endl;
-    }   
+    }
   }
   return RTC::RTC_OK;
 }
@@ -388,7 +303,116 @@ RTC::ReturnCode_t SoftBodyController::onExecute(RTC::UniqueId ec_id)
   }
 */
 
+bool SoftBodyController::updateCalculatedJointAngle(void)
+{
+  if ( m_qCurrent.data.length() == m_robot->numJoints()
+       && m_qRef.data.length() == m_robot->numJoints() ) {
+    double new_dq, new_ddq;
+    for(int i = 0; i < m_robot->numJoints(); i++) {
+      // new_dq = (m_qRef.data[i] - m_calculated_q[i]) / m_dt;
+      new_dq = (m_qCurrent.data[i] - m_calculated_q[i]) / m_dt;
+      new_ddq = (new_dq - m_calculated_dq[i]) / m_dt;
+      // m_calculated_q[i] = m_qRef.data[i];
+      m_calculated_q[i] = m_qCurrent.data[i];
+      m_calculated_dq[i] = m_filters[2 * i].executeFilter(new_dq);
+      m_calculated_ddq[i] = m_filters[2 * i + 1].executeFilter(new_ddq);
+    }
+    if (isDebug()) {
+      std::string prefix = "[SoftBodyController]";
+      std::cerr << prefix << "qCurrent:";
+      for (int i = 0; i < m_robot->numJoints(); i++) {
+        std::cerr << " " << m_qCurrent.data[i];
+      }
+      std::cerr << std::endl;
+      std::cerr << prefix << "q:";
+      for (int i = 0; i < m_robot->numJoints(); i++) {
+        std::cerr << " " << m_qRef.data[i];
+      }
+      std::cerr << std::endl;
+      std::cerr << prefix << "dq:";
+      for (int i = 0; i < m_robot->numJoints(); i++) {
+        std::cerr << " " << m_calculated_dq[i];
+      }
+      std::cerr << std::endl;
+      std::cerr << prefix << "ddq:";
+      for (int i = 0; i < m_robot->numJoints(); i++) {
+        std::cerr << " " << m_calculated_ddq[i];
+      }
+      std::cerr << std::endl;
+    }
+    return true;
+  }
+  // failed to update
+  return false;
+}
 
+bool SoftBodyController::calcCompensationTorque(hrp::dvector& compensationTau)
+{
+  if ( m_tau.data.length() == m_robot->numJoints() ) {
+    compensationTau.resize(m_robot->numJoints());
+
+    hrp::dvector inertia_torque(m_robot->numJoints());
+    for (int i = 0; i < m_robot->numJoints(); i++) {
+      // tau = J * ddq
+      // inertia = rotorInertia + InertiaAroundJointAxis
+      hrp::Vector3 cog_world = (m_robot->joint(i)->submwc / m_robot->joint(i)->subm) - m_robot->joint(i)->p;
+      double inertia = m_robot->joint(i)->Ir + (m_robot->joint(i)->subm * cog_world.squaredNorm());
+      inertia_torque[i] = inertia * m_calculated_ddq[i];
+    }
+
+    // calc friction
+    hrp::dvector friction_torque(m_robot->numJoints());
+    for (int i = 0; i < m_robot->numJoints(); i++) {
+      // B * dq
+      friction_torque[i] = m_frictionCoeffs[i] * m_calculated_dq[i];
+    }
+    
+    // calc gravity compensation of each joints
+    hrp::Vector3 g(0, 0, 9.8);
+    hrp::dvector gravity_compensation(m_robot->numJoints());
+    hrp::Vector3 cog_world, mg, axis_world;
+    for (int i = 0; i < m_robot->numJoints(); i++) {
+      // (submwc/subm - p) x subm*g . R*a
+      // subm: mass, g: gravity, submwc/subm: cog in worldcoords, p: pos in worldcoords, R: posture, a: axis in worldcoords
+      // gravity_compensation[i] = (m_robot->joint(i)->submwc / m_robot->joint(i)->subm - m_robot->joint(i)->p).cross(m_robot->joint(i)->subm*g).dot(m_robot->joint(i)->R * m_robot->joint(i)->a)
+      cog_world = (m_robot->joint(i)->submwc / m_robot->joint(i)->subm) - m_robot->joint(i)->p;
+      mg = m_robot->joint(i)->subm*g;
+      axis_world = m_robot->joint(i)->R * m_robot->joint(i)->a;
+      gravity_compensation[i] = (cog_world.cross(mg)).dot(axis_world);
+    }
+    // calc compensation torque: A(q)*ddq + B(q, dq) + C(q) = tau
+    for (int i = 0; i < m_robot->numJoints(); i++) {
+      compensationTau[i] = inertia_torque[i] + friction_torque[i] + gravity_compensation[i];
+      // compensationTau[i] = gravity_compensation[i];
+    }
+    if (isDebug()) {
+      std::string prefix = "[SoftBodyController]";
+      std::cerr << prefix << "inertia:";
+      for (int i = 0; i < m_robot->numJoints(); i++) {
+        std::cerr << " " << inertia_torque[i];
+      }
+      std::cerr << std::endl;
+      std::cerr << prefix << "friction:";
+      for (int i = 0; i < m_robot->numJoints(); i++) {
+        std::cerr << " " << friction_torque[i];
+      }
+      std::cerr << std::endl;
+      std::cerr << prefix << "gravity:";
+      for (int i = 0; i < m_robot->numJoints(); i++) {
+        std::cerr << " " << gravity_compensation[i];
+      }
+      std::cerr << std::endl;
+    }
+    return true;
+  }
+  // failed to calculate
+  return false;
+}
+
+bool SoftBodyController::isDebug(int cycle)
+{
+  return ((m_debugLevel == 1 && (m_loop % cycle == 0)) || m_debugLevel > 1);
+}
 
 extern "C"
 {

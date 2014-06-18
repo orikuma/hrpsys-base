@@ -143,6 +143,7 @@ class SoftBodyController
  private:
 
   double m_dt;
+  unsigned long long m_loop;
   hrp::BodyPtr m_robot;
   unsigned int m_debugLevel;
 
@@ -154,6 +155,10 @@ class SoftBodyController
   hrp::dvector m_calculated_ddq;
 
   std::vector<IIRFilter> m_filters;
+
+  bool updateCalculatedJointAngle();
+  bool calcCompensationTorque(hrp::dvector& compensationTau);
+  bool isDebug(int cycle = 20);
 
 };
 
