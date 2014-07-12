@@ -16,7 +16,7 @@
 
 #define TRANSITION_TIME 2.0 // [sec]
 #define MAX_TRANSITION_COUNT (TRANSITION_TIME/m_dt)
-#define TORQUE_MARGIN 10.0 // [Nm]
+#define DEFAULT_MARGIN 10.0 // [Nm]
 #define DEFAULT_MIN_MAX_DQ (0.17 * m_dt) // default min/max is 10[deg/sec] = 0.17[rad/sec]
 
 MotorTorqueController::MotorTorqueController()
@@ -24,28 +24,28 @@ MotorTorqueController::MotorTorqueController()
   // default constructor: _jname = "", _ke = _tc = _dt = 0.0
   setupController(0.0, 0.0, 0.0);
   setupControllerCommon("", 0.0);
-  setupMotorControllerMinMaxDq(0.0, 0.0);
+  setupDefaultValuesForMotorTorqueController();
 }
 
 MotorTorqueController::MotorTorqueController(std::string _jname, double _ke, double _tc, double _dt)
 {
   setupController(_ke, _tc, _dt);
   setupControllerCommon(_jname, _dt);
-  setupMotorControllerMinMaxDq(-DEFAULT_MIN_MAX_DQ, DEFAULT_MIN_MAX_DQ); 
+  setupDefaultValuesForMotorTorqueController();
 }
 
 MotorTorqueController::MotorTorqueController(std::string _jname, double _ke, double _kd, double _tc, double _dt)
 {
   setupController(_ke, _kd, _tc, _dt);
   setupControllerCommon(_jname, _dt);
-  setupMotorControllerMinMaxDq(-DEFAULT_MIN_MAX_DQ, DEFAULT_MIN_MAX_DQ);
+  setupDefaultValuesForMotorTorqueController();
 }
 
 MotorTorqueController::MotorTorqueController(std::string _jname, double _alpha, double _beta, double _ki, double _tc, double _dt)
 {
   setupController(_alpha, _beta, _ki, _tc, _dt);
   setupControllerCommon(_jname, _dt);
-  setupMotorControllerMinMaxDq(-DEFAULT_MIN_MAX_DQ, DEFAULT_MIN_MAX_DQ);
+  setupDefaultValuesForMotorTorqueController();
 }
 
 MotorTorqueController::~MotorTorqueController(void)
@@ -76,6 +76,12 @@ void MotorTorqueController::setupMotorControllerMinMaxDq(double _min_dq, double 
   m_emergencyController.min_dq = _min_dq;
   m_normalController.max_dq = _max_dq;
   m_emergencyController.max_dq = _max_dq;
+  return;
+}
+
+void MotorTorqueController::setEmergencyMargin(double _margin)
+{
+  m_emergency_margin = _margin;
   return;
 }
 
@@ -126,7 +132,7 @@ double MotorTorqueController::execute (double _tau, double _tauMax)
     }
   } else {
     if (m_emergencyController.state == ACTIVE &&
-        std::abs(_tau) <= std::max(std::abs(_tauMax) - TORQUE_MARGIN, 0.0)) {
+        std::abs(_tau) <= std::max(std::abs(_tauMax) - m_emergency_margin, 0.0)) {
       if (m_normalController.state != INACTIVE) { // take control over normal process
         m_normalController.transition_dq = m_emergencyController.getMotorControllerDq();
         m_emergencyController.state = INACTIVE;
@@ -192,6 +198,13 @@ void MotorTorqueController::setupControllerCommon(std::string _jname, double _dt
   resetMotorControllerVariables(m_normalController);
   m_emergencyController.state = INACTIVE;
   resetMotorControllerVariables(m_emergencyController);
+}
+
+void MotorTorqueController::setupDefaultValuesForMotorTorqueController(void)
+{
+  setupMotorControllerMinMaxDq(-DEFAULT_MIN_MAX_DQ, DEFAULT_MIN_MAX_DQ);
+  setEmergencyMargin(DEFAULT_MARGIN);
+  return;
 }
 
 void MotorTorqueController::resetMotorControllerVariables(MotorTorqueController::MotorController& _mc)

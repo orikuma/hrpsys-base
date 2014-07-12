@@ -36,6 +36,7 @@ public:
   void setupController(double _ke, double _kd, double _tc, double _dt);
   void setupController(double _alpha, double _beta, double _ki, double _tc, double _dt);
   void setupMotorControllerMinMaxDq(double _min_dq, double _max_dq); // set min/max dq for transition
+  void setEmergencyMargin(double _margin); // set margin for emergency torque control
   bool activate(void); // set state of torque controller to ACTIVE
   bool deactivate(void); // set state of torque controller to STOP -> INACTIVE
   bool setReferenceTorque(double _tauRef); // set reference torque (does not activate controller)
@@ -69,6 +70,7 @@ private:
   
   // internal functions
   void setupControllerCommon(std::string _jname, double _dt);
+  void setupDefaultValuesForMotorTorqueController(void);
   void resetMotorControllerVariables(MotorController& _mc); // reset internal torque control parameter  
   void prepareStop(MotorController &_mc);
   void updateController(double _tau, double _tauRef, MotorController& _mc); // execute control and update controller member valiables 
@@ -76,6 +78,7 @@ private:
   std::string m_joint_name; // joint name which is controled
   int m_transition_count; // positive value when stopping
   double m_dt; // control term
+  double m_emergency_margin; // margin to stop emergency control, for preventing ocillation
   double m_current_tau; // current tau (mainly for debug message)
   double m_command_tauRef; // reference tau
   double m_actual_tauRef; // reference tau which is limited or overwritten by emergency (mainly for debug message)
