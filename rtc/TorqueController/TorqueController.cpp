@@ -176,7 +176,7 @@ RTC::ReturnCode_t TorqueController::onInitialize()
   for (int i = 0; i < m_robot->numJoints(); i++) {
     m_motorTorqueControllers[i].setupMotorControllerMinMaxDq(m_robot->joint(i)->lvlimit * m_dt, m_robot->joint(i)->uvlimit * m_dt);
     if (emergencyMarginFromConf.size() == m_robot->numJoints()) {
-      coil::stringTo(emergency_margin, motorTorqueControllerParamsFromConf[i].c_str());
+      coil::stringTo(emergency_margin, emergencyMarginFromConf[i].c_str());
       m_motorTorqueControllers[i].setEmergencyMargin(emergency_margin);
     }
   }
