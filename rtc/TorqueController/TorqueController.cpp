@@ -172,12 +172,18 @@ RTC::ReturnCode_t TorqueController::onInitialize()
 
   // parameter setttings for torque controller
   coil::vstring emergencyMarginFromConf = coil::split(prop["emergency_margin"], ",");
-  double emergency_margin;
+  hrp::dvector tmpEmergencyMargin(m_robot->numJoints());
   for (int i = 0; i < m_robot->numJoints(); i++) {
     m_motorTorqueControllers[i].setupMotorControllerMinMaxDq(m_robot->joint(i)->lvlimit * m_dt, m_robot->joint(i)->uvlimit * m_dt);
     if (emergencyMarginFromConf.size() == m_robot->numJoints()) {
-      coil::stringTo(emergency_margin, emergencyMarginFromConf[i].c_str());
-      m_motorTorqueControllers[i].setEmergencyMargin(emergency_margin);
+      coil::stringTo(tmpEmergencyMargin[i], emergencyMarginFromConf[i].c_str());
+      m_motorTorqueControllers[i].setEmergencyMargin(tmpEmergencyMargin[i]);
+    }
+  }
+  if (m_debugLevel > 0 && emergencyMarginFromConf.size() == m_robot->numJoints()) {
+    std::cerr << "emergency margin:" << std::endl;
+    for (int i = 0; i < m_robot->numJoints(); i++) {
+      std::cerr << m_robot->joint(i)->name << ":" << tmpEmergencyMargin[i] << std::endl;
     }
   }
 
