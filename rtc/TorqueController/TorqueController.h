@@ -113,6 +113,7 @@ public:
   bool setMultipleReferenceTorques(const OpenHRP::TorqueControllerService::StrSequence& jnames, const OpenHRP::TorqueControllerService::dSequence& tauRefs);
   bool setTorqueControllerParam(const std::string jname, const OpenHRP::TorqueControllerService::torqueControllerParam& i_param);
   bool getTorqueControllerParam(const std::string jname, OpenHRP::TorqueControllerService::torqueControllerParam& i_param);
+  bool setTorqueControlMinMaxDq(const std::string jname, double dq_min, double dq_max);
   
 protected:
 // Configuration variable declaration

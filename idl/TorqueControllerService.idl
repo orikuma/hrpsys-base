@@ -104,5 +104,13 @@ module OpenHRP
      * @return true if set all successfully, false otherwise
      */
     boolean getTorqueControllerParam(in string jname, out torqueControllerParam i_param);
+
+    /**
+     * @brief set limit dq from reference joint angle in torque control
+     * @param jname: joint name, dq_min: minimum dq, dq_max: maximum dq (assumes dq_min < dq_max)
+     * @return true if set all successfully, false otherwise
+     */
+    boolean setTorqueControlMinMaxDq(in string jname, in double dq_min, in double dq_max);
+      
   };
 };

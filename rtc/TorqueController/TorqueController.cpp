@@ -678,6 +678,22 @@ bool TorqueController::getTorqueControllerParam(const std::string jname, OpenHRP
   return retval;
 }
 
+bool TorqueController::setTorqueControlMinMaxDq(const std::string jname, double dq_min, double dq_max)
+{
+  bool succeed = false;
+  for (std::vector<MotorTorqueController>::iterator it = m_motorTorqueControllers.begin(); it != m_motorTorqueControllers.end(); ++it) {
+    if ((*it).getJointName() == jname) {
+      if (m_debugLevel > 0) {
+          std::cerr << "[" <<  m_profile.instance_name << "]" << " Modify min_dq as " << dq_min << " and max_dq as " << dq_max << " in " << jname << std::endl;
+      }
+      (*it).setupMotorControllerControlMinMaxDq(dq_min, dq_max);
+      succeed = true;
+    }
+  }
+  return succeed;
+}
+
+
 void TorqueController::updateParam(double &val, double &val_new)
 {
   // update value unless val_new is not 0

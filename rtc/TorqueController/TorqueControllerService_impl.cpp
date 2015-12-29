@@ -71,6 +71,10 @@ CORBA::Boolean TorqueControllerService_impl::getTorqueControllerParam(const char
     return m_torque_controller->getTorqueControllerParam(std::string(jointName), i_param);
 }
 
+CORBA::Boolean TorqueControllerService_impl::setTorqueControlMinMaxDq(const char *jointName, double dq_min, double dq_max)
+{
+    return m_torque_controller->setTorqueControlMinMaxDq(std::string(jointName), dq_min, dq_max);
+}
 
 void TorqueControllerService_impl::torque_controller(TorqueController *i_torque_controller)
 {

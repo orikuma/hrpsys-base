@@ -29,6 +29,7 @@ public:
 	CORBA::Boolean setMultipleReferenceTorques(const OpenHRP::TorqueControllerService::StrSequence& jnames, const OpenHRP::TorqueControllerService::dSequence& tauRefs);
 	CORBA::Boolean setTorqueControllerParam(const char *jointName, const OpenHRP::TorqueControllerService::torqueControllerParam& i_param);
 	CORBA::Boolean getTorqueControllerParam(const char *jointName, OpenHRP::TorqueControllerService::torqueControllerParam& i_param);
+	CORBA::Boolean setTorqueControlMinMaxDq(const char *jointName, double dq_min, double dq_max);
 	
 	void torque_controller(TorqueController *i_torque_controller);
 private:
