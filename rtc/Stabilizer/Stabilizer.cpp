@@ -37,6 +37,17 @@ static const char* stabilizer_spec[] =
   };
 // </rtc-template>
 
+static std::ostream& operator<<(std::ostream& os, const struct RTC::Time &tm)
+{
+    int pre = os.precision();
+    os.setf(std::ios::fixed);
+    os << std::setprecision(6)
+       << (tm.sec + tm.nsec/1e9)
+       << std::setprecision(pre);
+    os.unsetf(std::ios::fixed);
+    return os;
+}
+
 static double switching_inpact_absorber(double force, double lower_th, double upper_th);
 
 Stabilizer::Stabilizer(RTC::Manager* manager)
@@ -296,6 +307,7 @@ RTC::ReturnCode_t Stabilizer::onInitialize()
     }
     m_contactStates.data.length(num);
     m_toeheelRatio.data.length(num);
+    m_will_fall_counter.resize(num);
   }
 
   std::vector<std::pair<hrp::Link*, hrp::Link*> > interlocking_joints;
@@ -385,6 +397,7 @@ RTC::ReturnCode_t Stabilizer::onInitialize()
   limb_stretch_avoidance_time_const = 1.5;
   limb_stretch_avoidance_vlimit[0] = -100 * 1e-3 * dt; // lower limit
   limb_stretch_avoidance_vlimit[1] = 50 * 1e-3 * dt; // upper limit
+  sync_to_air_max_counter = static_cast<int>(0.2 / dt); // [s]
 
   // parameters for RUNST
   double ke = 0, tc = 0;
@@ -418,6 +431,8 @@ RTC::ReturnCode_t Stabilizer::onInitialize()
   qrefv.resize(m_robot->numJoints());
   transition_count = 0;
   loop = 0;
+  m_is_falling_counter = 0;
+  sync_to_air_counter = 0;
   total_mass = m_robot->totalMass();
   ref_zmp_aux = hrp::Vector3::Zero();
   m_actContactStates.data.length(m_contactStates.data.length());
@@ -603,7 +618,10 @@ RTC::ReturnCode_t Stabilizer::onExecute(RTC::UniqueId ec_id)
       } else {
         calcTPCC();
       }
-      if ( transition_count == 0 && !on_ground ) control_mode = MODE_SYNC_TO_AIR;
+      if ( transition_count == 0 && !on_ground ) {
+          if (sync_to_air_counter < sync_to_air_max_counter) ++sync_to_air_counter;
+          else control_mode = MODE_SYNC_TO_AIR;
+      } else sync_to_air_counter = 0;
       break;
     case MODE_SYNC_TO_IDLE:
       sync_2_idle();
@@ -1105,7 +1123,7 @@ void Stabilizer::getTargetParameters ()
     transition_count++;
   } else if ( transition_count > 0 ) {
     if ( transition_count == 1 ) {
-      std::cerr << "[" << m_profile.instance_name << "] Move to MODE_IDLE" << std::endl;
+      std::cerr << "[" << m_profile.instance_name << "] [" << m_qRef.tm << "] Move to MODE_IDLE" << std::endl;
       reset_emergency_flag = true;
     }
     transition_count--;
@@ -1279,7 +1297,8 @@ void Stabilizer::calcStateForEmergencySignal()
     }
     if (is_cp_outside) {
       if (initial_cp_too_large_error || loop % static_cast <int>(0.2/dt) == 0 ) { // once per 0.2[s]
-        std::cerr << "[" << m_profile.instance_name << "] CP too large error " << "[" << act_cp(0) << "," << act_cp(1) << "] [m]" << std::endl;
+        std::cerr << "[" << m_profile.instance_name << "] [" << m_qRef.tm
+                  << "] CP too large error " << "[" << act_cp(0) << "," << act_cp(1) << "] [m]" << std::endl;
       }
       initial_cp_too_large_error = false;
     } else {
@@ -1296,11 +1315,15 @@ void Stabilizer::calcStateForEmergencySignal()
               if (is_walking) {
                   if (projected_normal.at(i).norm() > sin(tilt_margin[0])) {
                       will_fall = true;
-                      std::cerr << "swgsuptime : " << m_controlSwingSupportTime.data[i] << ", state : " << contact_states[i] << std::endl;
-                      if (loop % static_cast <int>(1.0/dt) == 0 ) { // once per 1.0[s]
-                          std::cerr << "[" << m_profile.instance_name << "] " << stikp[i].ee_name << " cannot support total weight, "
-                                    << "otherwise robot will fall down toward " << "(" << projected_normal.at(i)(0) << "," << projected_normal.at(i)(1) << ") direction" << std::endl;
+                      if (m_will_fall_counter[i] % static_cast <int>(1.0/dt) == 0 ) { // once per 1.0[s]
+                          std::cerr << "[" << m_profile.instance_name << "] [" << m_qRef.tm
+                                    << "] " << stikp[i].ee_name << " cannot support total weight, "
+                                    << "swgsuptime : " << m_controlSwingSupportTime.data[i] << ", state : " << contact_states[i]
+                                    << ", otherwise robot will fall down toward " << "(" << projected_normal.at(i)(0) << "," << projected_normal.at(i)(1) << ") direction" << std::endl;
                       }
+                      m_will_fall_counter[i]++;
+                  } else {
+                      m_will_fall_counter[i] = 0;
                   }
               }
               fall_direction += projected_normal.at(i) * act_force.at(i).norm();
@@ -1314,9 +1337,13 @@ void Stabilizer::calcStateForEmergencySignal()
       }
       if (fall_direction.norm() > sin(tilt_margin[1])) {
           is_falling = true;
-          if (loop % static_cast <int>(0.2/dt) == 0 ) { // once per 0.2[s]
-              std::cerr << "[" << m_profile.instance_name << "] robot is falling down toward " << "(" << fall_direction(0) << "," << fall_direction(1) << ") direction" << std::endl;
+          if (m_is_falling_counter % static_cast <int>(0.2/dt) == 0) { // once per 0.2[s]
+              std::cerr << "[" << m_profile.instance_name << "] [" << m_qRef.tm
+                        << "] robot is falling down toward " << "(" << fall_direction(0) << "," << fall_direction(1) << ") direction" << std::endl;
           }
+          m_is_falling_counter++;
+      } else {
+          m_is_falling_counter = 0;
       }
   }
   // Total check for emergency signal
@@ -1331,7 +1358,7 @@ void Stabilizer::calcStateForEmergencySignal()
       is_emergency = is_cp_outside;
       break;
   case OpenHRP::StabilizerService::TILT:
-      is_emergency = will_fall | is_falling;
+      is_emergency = will_fall || is_falling;
       break;
   default:
       break;
@@ -1510,7 +1537,7 @@ void Stabilizer::calcEEForceMomentControl() {
         if (is_ik_enable[i]) {
           // Add damping_control compensation to target value
           if (is_feedback_control_enable[i]) {
-            rats::rotm3times(tmpR[i], target_ee_R[i], hrp::rotFromRpy(-stikp[i].ee_d_foot_rpy(0), -stikp[i].ee_d_foot_rpy(1), 0));
+            rats::rotm3times(tmpR[i], target_ee_R[i], hrp::rotFromRpy(-1*stikp[i].ee_d_foot_rpy));
             // foot force difference control version
             // total_target_foot_p[i](2) = target_foot_p[i](2) + (i==0?0.5:-0.5)*zctrl;
             // foot force independent damping control
@@ -1675,7 +1702,8 @@ RTC::ReturnCode_t Stabilizer::onRateChanged(RTC::UniqueId ec_id)
 
 void Stabilizer::sync_2_st ()
 {
-  std::cerr << "[" << m_profile.instance_name << "] " << "Sync IDLE => ST"  << std::endl;
+  std::cerr << "[" << m_profile.instance_name << "] [" << m_qRef.tm
+            << "] Sync IDLE => ST"  << std::endl;
   pangx_ref = pangy_ref = pangx = pangy = 0;
   rdx = rdy = rx = ry = 0;
   d_rpy[0] = d_rpy[1] = 0;
@@ -1702,7 +1730,8 @@ void Stabilizer::sync_2_st ()
 
 void Stabilizer::sync_2_idle ()
 {
-  std::cerr << "[" << m_profile.instance_name << "] " << "Sync ST => IDLE"  << std::endl;
+  std::cerr << "[" << m_profile.instance_name << "] [" << m_qRef.tm
+            << "] Sync ST => IDLE"  << std::endl;
   transition_count = transition_time / dt;
   for (int i = 0; i < m_robot->numJoints(); i++ ) {
     transition_joint_q[i] = m_robot->joint(i)->q;
@@ -1877,6 +1906,7 @@ void Stabilizer::getParameter(OpenHRP::StabilizerService::stParam& i_stp)
   i_stp.use_limb_stretch_avoidance = use_limb_stretch_avoidance;
   i_stp.limb_stretch_avoidance_time_const = limb_stretch_avoidance_time_const;
   i_stp.limb_length_margin.length(stikp.size());
+  i_stp.sync_to_air_max_time = sync_to_air_max_counter * dt;
   for (size_t i = 0; i < 2; i++) {
     i_stp.limb_stretch_avoidance_vlimit[i] = limb_stretch_avoidance_vlimit[i];
   }
@@ -2053,6 +2083,7 @@ void Stabilizer::setParameter(const OpenHRP::StabilizerService::stParam& i_stp)
   for (size_t i = 0; i < 2; i++) {
     limb_stretch_avoidance_vlimit[i] = i_stp.limb_stretch_avoidance_vlimit[i];
   }
+  sync_to_air_max_counter = static_cast<int>(i_stp.sync_to_air_max_time / dt);
   if (control_mode == MODE_IDLE) {
       for (size_t i = 0; i < i_stp.end_effector_list.length(); i++) {
           std::vector<STIKParam>::iterator it = std::find_if(stikp.begin(), stikp.end(), (&boost::lambda::_1->* &std::vector<STIKParam>::value_type::ee_name == std::string(i_stp.end_effector_list[i].leg)));
