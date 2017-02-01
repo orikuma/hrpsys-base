@@ -149,7 +149,7 @@ RTC::ReturnCode_t ShmAccessor::onDeactivated(RTC::UniqueId ec_id)
 RTC::ReturnCode_t ShmAccessor::onExecute(RTC::UniqueId ec_id)
 {
   // std::cout << m_profile.instance_name<< ": onExecute(" << ec_id << "), data = " << m_data.data << std::endl;
-  std::cout << m_profile.instance_name<< ": onExecute(" << ec_id << ")" << std::endl;
+  // std::cout << m_profile.instance_name<< ": onExecute(" << ec_id << ")" << std::endl;
 
   // read input port 
   while (m_dataIn.isNew()){

@@ -263,6 +263,9 @@ class HrpsysConfigurator(object):
     acf_svc = None
     acf_version = None
 
+    # ShmAccessor
+    sa = None
+
     # rtm manager
     ms = None
 
