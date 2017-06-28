@@ -121,10 +121,14 @@ RTC::ReturnCode_t PointCloudViewer::onExecute(RTC::UniqueId ec_id)
     m_cloudIn.read();
 
     bool is_color_points = false;
+    bool is_intensity_points = false;    
     for (int i = 0; i < m_cloud.fields.length(); i++) {
         std::string tmp_name(m_cloud.fields[i].name);
         if (tmp_name.find("r") != std::string::npos || tmp_name.find("g") != std::string::npos || tmp_name.find("b") != std::string::npos) {
             is_color_points = true; // color pointcloud should have rgb field 
+        }
+        if (tmp_name.find("intensity") != std::string::npos) {
+            is_intensity_points = true;
         }
     }
 
@@ -144,6 +148,20 @@ RTC::ReturnCode_t PointCloudViewer::onExecute(RTC::UniqueId ec_id)
         if (!m_viewer.wasStopped()){
             m_viewer.showCloud(cloud);
         }
+    } else if (is_intensity_points) {
+        pcl::PointCloud<pcl::PointXYZI>::Ptr cloud (new pcl::PointCloud<pcl::PointXYZI>);
+        cloud->points.resize(m_cloud.width*m_cloud.height);
+        float *src = (float *)m_cloud.data.get_buffer();
+        for (unsigned int i=0; i<cloud->points.size(); i++){
+            cloud->points[i].x = src[0];
+            cloud->points[i].y = src[1];
+            cloud->points[i].z = src[2];
+            cloud->points[i].intensity = src[3];
+            src += 8;
+        }
+        if (!m_viewer.wasStopped()){
+            m_viewer.showCloud(cloud);
+        }        
     } else {
         pcl::PointCloud<pcl::PointXYZ>::Ptr cloud (new pcl::PointCloud<pcl::PointXYZ>);
         cloud->points.resize(m_cloud.width*m_cloud.height);
