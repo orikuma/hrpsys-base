@@ -145,6 +145,10 @@ RTC::ReturnCode_t MLSFilter::onExecute(RTC::UniqueId ec_id)
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered (new pcl::PointCloud<pcl::PointXYZ>);
 
     // RTM -> PCL
+    std::cerr << "[MLSFilter] point size: " << m_original.width*m_original.height << std::endl;
+    std::cerr << "[MLSFilter] point step: " << m_original.point_step << std::endl;
+    std::cerr << "[MLSFilter] buffer size: " << m_original.data.length() << std::endl;
+    
     cloud->points.resize(m_original.width*m_original.height);
     float *src = (float *)m_original.data.get_buffer();
     for (unsigned int i=0; i<cloud->points.size(); i++){
