@@ -13,6 +13,9 @@
 #include "MLSFilter.h"
 #include "hrpsys/idl/pointcloud.hh"
 
+#include <ctime>
+#include <iostream>
+
 // Module specification
 // <rtc-template block="module_spec">
 static const char* spec[] =
@@ -145,6 +148,8 @@ RTC::ReturnCode_t MLSFilter::onExecute(RTC::UniqueId ec_id)
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered (new pcl::PointCloud<pcl::PointXYZ>);
 
     // RTM -> PCL
+    time_t now = std::time(NULL);
+    std::cerr << "[MLSFilter] time: " << std::ctime(&now);
     std::cerr << "[MLSFilter] point size: " << m_original.width*m_original.height << std::endl;
     std::cerr << "[MLSFilter] point step: " << m_original.point_step << std::endl;
     std::cerr << "[MLSFilter] buffer size: " << m_original.data.length() << std::endl;
