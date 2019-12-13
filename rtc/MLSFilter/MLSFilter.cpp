@@ -148,6 +148,15 @@ RTC::ReturnCode_t MLSFilter::onExecute(RTC::UniqueId ec_id)
     cloud->points.resize(m_original.width*m_original.height);
     float *src = (float *)m_original.data.get_buffer();
     for (unsigned int i=0; i<cloud->points.size(); i++){
+      if (i * m_original.point_step >= m_original.data.length()) {
+        std::cerr << m_profile.instance_name << ": point[" << i << "]"
+                  << " is out of buffer (buffer_size=" << m_original.data.length()
+                  << ",point_step=" << m_original.point_step
+                  << ",point_size=" << m_original.width*m_original.height
+                  << ")"
+                  << std::endl;
+        break;
+      }
       cloud->points[i].x = src[0];
       cloud->points[i].y = src[1];
       cloud->points[i].z = src[2];
